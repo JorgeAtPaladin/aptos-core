@@ -29,7 +29,10 @@ fn main() {
     )
     .unwrap();
 
-    let runtime = aptos_runtimes::spawn_named_runtime("indexercache".to_string(), None);
+    let runtime = aptos_runtimes::spawn_named_runtime(
+        "indexercache".to_string(),
+        None,
+    );
 
     // Start processing.
     runtime.spawn(async move {
@@ -41,7 +44,9 @@ fn main() {
     runtime.spawn(async move {
         let readiness = warp::path("readiness")
             .map(move || warp::reply::with_status("ready", warp::http::StatusCode::OK));
-        warp::serve(readiness).run(([0, 0, 0, 0], 8080)).await;
+        warp::serve(readiness)
+            .run(([0, 0, 0, 0], 8080))
+            .await;
     });
     let term = Arc::new(AtomicBool::new(false));
     while !term.load(Ordering::Acquire) {

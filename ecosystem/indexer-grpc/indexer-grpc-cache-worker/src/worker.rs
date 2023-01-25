@@ -136,11 +136,10 @@ impl Worker {
                             Some(t) => t.seconds,
                             None => 0,
                         };
-                        conn.pset_ex::<String, String, ()>(
+                        conn.set_ex::<String, String, ()>(
                             version.to_string(),
                             e.encoded_proto_data.to_string(),
-                            get_ttl_in_seconds(timestamp_in_seconds as u64) as usize,
-                        )
+                            get_ttl_in_seconds(version) as usize,)
                         .unwrap();
                     }
 

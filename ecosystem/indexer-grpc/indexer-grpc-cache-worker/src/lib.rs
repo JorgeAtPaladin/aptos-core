@@ -55,7 +55,8 @@ impl IndexerGrpcCacheWorkerConfig {
     }
 }
 
-const BASE_EXPIRATION_EPOCH_TIME_IN_SECONDS: u64 = u64::MAX / 1_000;
+// 9999-12-31 23:59:59. UTC.
+pub const BASE_EXPIRATION_EPOCH_TIME_IN_SECONDS: u64 = 253_402_300_799;
 
 /// Get the TTL in seconds for a given timestamp.
 pub fn get_ttl_in_seconds(timestamp_in_seconds: u64) -> u64 {
