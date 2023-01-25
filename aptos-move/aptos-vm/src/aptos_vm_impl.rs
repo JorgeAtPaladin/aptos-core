@@ -26,10 +26,7 @@ use aptos_types::{
         ApprovedExecutionHashes, FeatureFlag, Features, GasSchedule, GasScheduleV2, OnChainConfig,
         StorageGasSchedule, Version,
     },
-    transaction::{
-        AbortInfo, ExecutionStatus, Multisig, MultisigTransactionPayload, TransactionOutput,
-        TransactionStatus,
-    },
+    transaction::{AbortInfo, ExecutionStatus, Multisig, TransactionOutput, TransactionStatus},
     vm_status::{StatusCode, VMStatus},
 };
 use fail::fail_point;
@@ -436,18 +433,8 @@ impl AptosVMImpl {
     ) -> Result<(), VMStatus> {
         let transaction_validation = self.transaction_validation();
         let unreachable_error = VMStatus::Error(StatusCode::UNREACHABLE);
-        let provided_payload = if payload.transaction_payload.is_some() {
-            let payload = payload
-                .transaction_payload
-                .as_ref()
-                // This is unreachable as we already verified that the transaction payload is
-                // present.
-                .ok_or_else(|| unreachable_error.clone())?;
-            match payload {
-                MultisigTransactionPayload::EntryFunction(entry_function) => {
-                    bcs::to_bytes(&entry_function).map_err(|_| unreachable_error.clone())?
-                },
-            }
+        let provided_payload = if let Some(payload) = &payload.transaction_payload {
+            bcs::to_bytes(&payload).map_err(|_| unreachable_error.clone())?
         } else {
             // Default to empty bytes if payload is not provided.
             bcs::to_bytes::<Vec<u8>>(&vec![]).map_err(|_| unreachable_error)?
