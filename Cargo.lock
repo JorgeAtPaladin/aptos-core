@@ -1363,12 +1363,29 @@ dependencies = [
  "futures",
  "futures-core",
  "once_cell",
- "redis",
+ "redis 0.22.3",
  "redis-test",
  "serde 1.0.149",
  "serde_json",
  "serde_yaml 0.8.26",
  "tokio",
+ "tonic",
+ "warp",
+]
+
+[[package]]
+name = "aptos-indexer-grpc-data-service"
+version = "0.1.0"
+dependencies = [
+ "aptos-crash-handler",
+ "aptos-logger",
+ "aptos-moving-average",
+ "aptos-protos",
+ "deadpool-redis",
+ "futures",
+ "prost",
+ "tokio",
+ "tokio-stream",
  "tonic",
  "warp",
 ]
@@ -1385,7 +1402,7 @@ dependencies = [
  "aptos-runtimes",
  "cloud-storage",
  "futures-util",
- "redis",
+ "redis 0.22.3",
  "serde 1.0.149",
  "serde_json",
  "tokio",
@@ -4469,6 +4486,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "deadpool"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef82259c587bceda08349f28ff00f69ae4c897898f254140af6021eb218e8232"
+dependencies = [
+ "async-trait",
+ "config",
+ "num_cpus",
+ "serde 1.0.149",
+ "tokio",
+]
+
+[[package]]
+name = "deadpool-redis"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "637b3ef314fe3393113b2fbf2c98eb557aad7110dcf6b1a7e9b40bdd2589abc0"
+dependencies = [
+ "async-trait",
+ "config",
+ "deadpool",
+ "log",
+ "redis 0.20.2",
+ "serde 1.0.149",
+]
+
+[[package]]
 name = "debug-ignore"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4655,6 +4699,12 @@ name = "downcast"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
+
+[[package]]
+name = "dtoa"
+version = "0.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56899898ce76aaf4a0f24d914c97ea6ed976d42fec6ad33fcbb0a1103e07b2b0"
 
 [[package]]
 name = "e2e-move-tests"
@@ -8595,6 +8645,25 @@ dependencies = [
 
 [[package]]
 name = "redis"
+version = "0.20.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4f0ceb2ec0dd769483ecd283f6615aa83dcd0be556d5294c6e659caefe7cc54"
+dependencies = [
+ "async-trait",
+ "bytes 1.2.1",
+ "combine",
+ "dtoa",
+ "futures-util",
+ "itoa 0.4.8",
+ "percent-encoding",
+ "pin-project-lite",
+ "tokio",
+ "tokio-util 0.6.10",
+ "url",
+]
+
+[[package]]
+name = "redis"
 version = "0.22.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa8455fa3621f6b41c514946de66ea0531f57ca017b2e6c7cc368035ea5b46df"
@@ -8619,7 +8688,7 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e9ceb100979db7292de8a3d4ecdde659cccc85133303ea0741e1618a5bd73df"
 dependencies = [
- "redis",
+ "redis 0.22.3",
 ]
 
 [[package]]

@@ -131,15 +131,14 @@ impl Worker {
                     let batch_end_version = data.transactions.as_slice().last().unwrap().version;
 
                     for e in data.transactions {
-                        let version = e.version;
                         let timestamp_in_seconds = match e.timestamp {
                             Some(t) => t.seconds,
                             None => 0,
                         };
                         conn.set_ex::<String, String, ()>(
-                            version.to_string(),
+                            e.version.to_string(),
                             e.encoded_proto_data.to_string(),
-                            get_ttl_in_seconds(version) as usize,)
+                            get_ttl_in_seconds(timestamp_in_seconds as u64) as usize,)
                         .unwrap();
                     }
 
