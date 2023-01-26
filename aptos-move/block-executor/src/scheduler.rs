@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use aptos_infallible::Mutex;
+use aptos_mvhashmap::types::{Incarnation, TxnIndex, Version};
 use crossbeam::utils::CachePadded;
 use std::{
     cmp::min,
@@ -12,10 +13,6 @@ use std::{
     },
 };
 
-// Type aliases.
-pub type TxnIndex = usize;
-pub type Incarnation = usize;
-pub type Version = (TxnIndex, Incarnation);
 type DependencyCondvar = Arc<(Mutex<bool>, Condvar)>;
 
 // A struct to track the number of active tasks in the scheduler using RAII.

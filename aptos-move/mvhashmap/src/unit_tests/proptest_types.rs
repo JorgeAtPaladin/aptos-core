@@ -1,12 +1,16 @@
 // Copyright (c) Aptos
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{MVHashMap, MVHashMapError, MVHashMapOutput};
+use super::{
+    types::{MVDataError, MVDataOutput},
+    MVHashMap,
+};
+use crate::unit_tests::KeyType;
 use aptos_aggregator::{
     delta_change_set::{delta_add, delta_sub, DeltaOp},
     transaction::AggregatorValue,
 };
-use aptos_types::write_set::TransactionWrite;
+use aptos_types::{executable::ExecutableTestType, write_set::TransactionWrite};
 use proptest::{collection::vec, prelude::*, sample::Index, strategy::Strategy};
 use std::{
     collections::{BTreeMap, HashMap},
@@ -177,7 +181,8 @@ where
         .collect::<Vec<_>>();
 
     let baseline = Baseline::new(transactions.as_slice());
-    let map = MVHashMap::<K, Value<V>>::new();
+    // Only testing data, provide executable type ().
+    let map = MVHashMap::<KeyType<K>, Value<V>, ExecutableTestType>::new(None);
 
     // make ESTIMATE placeholders for all versions to be updated.
     // allows to test that correct values appear at the end of concurrent execution.
@@ -192,8 +197,8 @@ where
         })
         .collect::<Vec<_>>();
     for (key, idx) in versions_to_write {
-        map.add_write(&key, (idx, 0), Value(None));
-        map.mark_estimate(&key, idx);
+        map.write(&KeyType(key.clone()), (idx, 0), Value(None));
+        map.mark_estimate(&KeyType(key), idx);
     }
 
     let curent_idx = AtomicUsize::new(0);
@@ -211,14 +216,14 @@ where
                 let key = &transactions[idx].0;
                 match &transactions[idx].1 {
                     Operator::Read => {
-                        use MVHashMapError::*;
-                        use MVHashMapOutput::*;
+                        use MVDataError::*;
+                        use MVDataOutput::*;
 
                         let baseline = baseline.get(key, idx);
                         let mut retry_attempts = 0;
                         loop {
-                            match map.read(key, idx) {
-                                Ok(Version(_, v)) => {
+                            match map.read(&KeyType(key.clone()), idx) {
+                                Ok(Versioned(_, v)) => {
                                     match &*v {
                                         Value(Some(w)) => {
                                             assert_eq!(
@@ -270,12 +275,12 @@ where
                         }
                     },
                     Operator::Remove => {
-                        map.add_write(key, (idx, 1), Value(None));
+                        map.write(&KeyType(key.clone()), (idx, 1), Value(None));
                     },
                     Operator::Insert(v) => {
-                        map.add_write(key, (idx, 1), Value(Some(v.clone())));
+                        map.write(&KeyType(key.clone()), (idx, 1), Value(Some(v.clone())));
                     },
-                    Operator::Update(delta) => map.add_delta(key, idx, *delta),
+                    Operator::Update(delta) => map.add_delta(&KeyType(key.clone()), idx, *delta),
                 }
             })
         }

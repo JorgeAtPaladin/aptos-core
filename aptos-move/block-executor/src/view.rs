@@ -2,16 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::{
-    counters,
-    scheduler::{Scheduler, TxnIndex},
-    task::{ModulePath, Transaction},
-    txn_last_input_output::ReadDescriptor,
+    counters, scheduler::Scheduler, task::Transaction, txn_last_input_output::ReadDescriptor,
 };
 use anyhow::Result;
 use aptos_aggregator::delta_change_set::{deserialize, serialize, DeltaOp};
-use aptos_mvhashmap::{MVHashMap, MVHashMapError, MVHashMapOutput};
+use aptos_mvhashmap::{
+    types::{MVDataError, MVDataOutput, TxnIndex},
+    MVHashMap,
+};
 use aptos_state_view::{StateViewId, TStateView};
 use aptos_types::{
+    executable::{ExecutableTestType, ModulePath},
     state_store::state_storage_usage::StateStorageUsage,
     vm_status::{StatusCode, VMStatus},
     write_set::TransactionWrite,
@@ -29,8 +30,8 @@ pub type ResolvedData = Option<Vec<u8>>;
 /// TODO(issue 10177): MvHashMapView currently needs to be sync due to trait bounds, but should
 /// not be. In this case, the read_dependency member can have a RefCell<bool> type and the
 /// captured_reads member can have RefCell<Vec<ReadDescriptor<K>>> type.
-pub(crate) struct MVHashMapView<'a, K, V> {
-    versioned_map: &'a MVHashMap<K, V>,
+pub(crate) struct MVHashMapView<'a, K, V: TransactionWrite> {
+    versioned_map: &'a MVHashMap<K, V, ExecutableTestType>, // TODO: proper generic type
     scheduler: &'a Scheduler,
     captured_reads: RefCell<Vec<ReadDescriptor<K>>>,
 }
@@ -55,7 +56,10 @@ impl<
         V: TransactionWrite + Send + Sync,
     > MVHashMapView<'a, K, V>
 {
-    pub(crate) fn new(versioned_map: &'a MVHashMap<K, V>, scheduler: &'a Scheduler) -> Self {
+    pub(crate) fn new(
+        versioned_map: &'a MVHashMap<K, V, ExecutableTestType>,
+        scheduler: &'a Scheduler,
+    ) -> Self {
         Self {
             versioned_map,
             scheduler,
@@ -70,12 +74,12 @@ impl<
 
     /// Captures a read from the VM execution.
     fn read(&self, key: &K, txn_idx: TxnIndex) -> ReadResult<V> {
-        use MVHashMapError::*;
-        use MVHashMapOutput::*;
+        use MVDataError::*;
+        use MVDataOutput::*;
 
         loop {
             match self.versioned_map.read(key, txn_idx) {
-                Ok(Version(version, v)) => {
+                Ok(Versioned(version, v)) => {
                     let (idx, incarnation) = version;
                     self.captured_reads
                         .borrow_mut()

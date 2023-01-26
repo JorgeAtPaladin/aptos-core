@@ -3,11 +3,11 @@
 
 use crate::{
     errors::Error,
-    scheduler::{Incarnation, TxnIndex, Version},
-    task::{ExecutionStatus, ModulePath, Transaction, TransactionOutput},
+    task::{ExecutionStatus, Transaction, TransactionOutput},
 };
 use aptos_aggregator::delta_change_set::DeltaOp;
-use aptos_types::access_path::AccessPath;
+use aptos_mvhashmap::types::{Incarnation, TxnIndex, Version};
+use aptos_types::{access_path::AccessPath, executable::ModulePath};
 use arc_swap::ArcSwapOption;
 use crossbeam::utils::CachePadded;
 use dashmap::DashSet;
