@@ -1,0 +1,35 @@
+# This workflow runs a public fullnode using the `main` branch,
+# connects the public fullnode to `mainnet` and synchronizes the
+# node using fast syncing to verify that nothing has been broken.
+
+name: "fullnode-fast-mainnet-main"
+on:
+  # Allow triggering manually
+  workflow_dispatch:
+    inputs:
+      GIT_SHA:
+        required: false
+        type: string
+        description: The git SHA1 to test. If not specified, Forge will check the latest commits on the current branch
+  schedule:
+    - cron: "0 9/12 * * *"
+  pull_request:
+    paths:
+      - ".github/workflows/fullnode-fast-mainnet-main.yaml"
+
+env:
+  BRANCH: main
+  NETWORK: mainnet
+  BOOTSTRAPPING_MODE: DownloadLatestStates
+  CONTINUOUS_SYNCING_MODE: ApplyTransactionOutputs
+
+jobs:
+  sync-from-genesis:
+    timeout-minutes: 300 # Run for 5 hours
+    runs-on: high-perf-docker-with-local-ssd
+    steps:
+      - uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8 # pin@v3
+        with:
+          ref: ${{ inputs.GIT_SHA }}
+          fetch-depth: 0 # get all the history because cargo xtest --change-since origin/main requires it.
+      - uses: ./.github/actions/fullnode-sync

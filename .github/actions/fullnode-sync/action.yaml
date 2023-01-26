@@ -1,0 +1,45 @@
+# This action runs a public fullnode using a specified branch,
+# connects the public fullnode to a specified network and synchronizes the
+# node using a specified syncing mode to verify that nothing has been broken.
+
+# TODO: clean up the step that modifies the configs. It's very hacky!
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/rust-setup
+    - name: Run dev setup and install dependencies
+      shell: bash
+      run: |
+        set -x
+        echo "${HOME}/bin/" >> $GITHUB_PATH # default INSTALL_DIR to path
+        scripts/dev_setup.sh -b # install dependencies
+        sudo apt-get update -y && sudo apt-get install -y expect
+    - name: Change to the correct aptos-core branch
+      shell: bash
+      run: git checkout $BRANCH
+    - name: Clone the aptos-networks repo and copy the correct genesis blob and waypoint
+      shell: bash
+      run: |
+        cd ../
+        git clone https://github.com/aptos-labs/aptos-networks
+        cp aptos-networks/${NETWORK}/genesis.blob aptos-core/genesis.blob
+        cp aptos-networks/${NETWORK}/waypoint.txt aptos-core/waypoint.txt
+        cd aptos-core/
+    - name: Copy and modify the node config to the working directory
+      shell: bash
+      run: |
+        cp config/src/config/test_data/public_full_node.yaml .
+        sed -i -e 's/\/opt\/aptos\/data/\/tmp\//g' public_full_node.yaml
+        echo "state_sync:" >> public_full_node.yaml
+        echo "    state_sync_driver:" >> public_full_node.yaml
+        echo "        bootstrapping_mode: "${BOOTSTRAPPING_MODE} >> public_full_node.yaml
+        echo "        continuous_syncing_mode: "${CONTINUOUS_SYNCING_MODE} >> public_full_node.yaml
+        echo "    data_streaming_service:" >> public_full_node.yaml
+        echo "        max_concurrent_requests: 20" >> public_full_node.yaml
+    - name: Run the fullnode in release mode
+      shell: bash
+      run: |
+        echo "Starting the fullnode using branch: ${BRANCH}, for network: ${NETWORK}, with bootstrapping mode: ${BOOTSTRAPPING_MODE} and continuous syncing mode: ${CONTINUOUS_SYNCING_MODE}"
+        cat public_full_node.yaml
+        cargo run -p aptos-node --release -- -f ./public_full_node.yaml
