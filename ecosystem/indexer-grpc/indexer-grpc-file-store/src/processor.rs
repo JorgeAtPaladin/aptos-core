@@ -1,26 +1,35 @@
 // Copyright (c) Aptos
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{
-    blob_data::TransactionsBlob, generate_blob_name, get_blob_transaction_size,
-    get_file_store_bucket_name,
+use crate::{generate_blob_name, get_file_store_blob_folder_name, get_file_store_bucket_name};
+use aptos_indexer_grpc_utils::{
+    storage::{get_file_store_metadata, FileStoreMetadata},
+    CACHE_KEY_CHAIN_ID,
 };
-use aptos_indexer_grpc_gcs_utils::get_next_file_store_version;
 use aptos_logger::info;
-use cloud_storage::{Bucket, Object};
-use deadpool_redis::redis::cmd;
-use moving_average::MovingAverage;
-use std::{sync::Arc, thread::sleep, time::Duration};
+use aptos_moving_average::MovingAverage;
+use cloud_storage::Object;
+use redis::{Client, Commands};
+use serde::{Deserialize, Serialize};
+use std::{thread::sleep, time::Duration};
+
+#[derive(Serialize, Deserialize)]
+struct TransactionsBlob {
+    /// The version of the first transaction in the blob.
+    pub starting_version: u64,
+    /// The transactions in the blob.
+    pub transactions: Vec<String>,
+}
 
 pub struct Processor {
-    pub redis_pool: Arc<deadpool_redis::Pool>,
-    chain_id: u32,
-    next_version: u64,
+    pub redis_client: Client,
+    current_version: u64,
 }
 
 async fn upload_blob_transactions(
     starting_version: u64,
     encoded_proto_data_vec: Vec<String>,
+    blob_size: u64,
 ) -> anyhow::Result<()> {
     let blob_object: TransactionsBlob = TransactionsBlob {
         starting_version,
@@ -30,7 +39,12 @@ async fn upload_blob_transactions(
     match Object::create(
         &get_file_store_bucket_name(),
         serde_json::to_vec(&blob_object).unwrap(),
-        generate_blob_name(starting_version).as_str(),
+        format!(
+            "{}/{}",
+            get_file_store_blob_folder_name(),
+            generate_blob_name(starting_version, blob_size)
+        )
+        .as_str(),
         "application/json",
     )
     .await
@@ -48,54 +62,41 @@ async fn upload_blob_transactions(
 }
 
 impl Processor {
-    pub fn new(redis_address: String, chain_id: u32) -> Self {
+    pub fn new(redis_address: String) -> Self {
         Self {
-            redis_pool: Arc::new(
-                deadpool_redis::Config::from_url(redis_address)
-                    .create_pool(Some(deadpool_redis::Runtime::Tokio1))
-                    .unwrap(),
-            ),
-            chain_id,
-            next_version: 0,
+            redis_client: Client::open(format!("redis://{}", redis_address)).unwrap(),
+            current_version: 0,
         }
     }
 
-    /// Determines the next blob to process.
-    pub async fn start(&mut self) {
-        let mut conn = self.redis_pool.get().await.unwrap();
-        let chain_id = cmd("GET")
-            .arg("chain_id")
-            .query_async::<_, String>(&mut conn)
-            .await
-            .unwrap();
-        assert_eq!(chain_id, self.chain_id.to_string());
+    pub async fn run(&mut self) {
         let bucket_name = get_file_store_bucket_name();
-
-        // It's fatal if the bucket doesn't exist.
-        Bucket::read(&get_file_store_bucket_name())
-            .await
-            .expect("[Indexer File Store] file bucket exists.");
-        self.next_version = get_next_file_store_version(bucket_name)
-            .await
-            .expect("[Indexer File Store] failed to get next file store version.");
-
-        info!(
-            start_version = self.next_version,
-            "[indexer file store] Started processing"
-        );
+        let metadata = get_file_store_metadata(bucket_name)
+            .await;
+        self.process(metadata).await;
     }
 
     // Starts the processing.
-    pub async fn process(&mut self) {
-        let mut conn = self.redis_pool.get().await.unwrap();
+    async fn process(&mut self, mut metadata: FileStoreMetadata) {
+        let mut conn = self.redis_client.get_connection().unwrap();
         let mut ma = MovingAverage::new(10_000);
+        let bucket_name = get_file_store_bucket_name();
+
+        let redis_chain_id = conn
+            .get::<String, String>(CACHE_KEY_CHAIN_ID.to_string())
+            .unwrap();
+
+        // It's fatal if the chain_id doesn't match; this is a safety check.
+        assert_eq!(redis_chain_id, metadata.chain_id.to_string());
+        let blob_size = metadata.blob_size;
+        // The current version is the version of the last blob that was uploaded.
+        self.current_version = metadata.version;
+
         loop {
-            let versions = (self.next_version..self.next_version + 100).collect::<Vec<u64>>();
-            let encoded_proto_data_vec = match cmd("MGET")
-                .arg(&versions)
-                .query_async::<_, Vec<String>>(&mut conn)
-                .await
-            {
+            let versions = (self.current_version..self.current_version + blob_size)
+                .map(|e| e.to_string())
+                .collect::<Vec<String>>();
+            let encoded_proto_data_vec = match conn.mget::<Vec<String>, Vec<String>>(versions) {
                 Ok(data) => data,
                 Err(err) => {
                     info!(
@@ -106,13 +107,16 @@ impl Processor {
                     continue;
                 },
             };
-            match upload_blob_transactions(self.next_version, encoded_proto_data_vec).await {
+            match upload_blob_transactions(self.current_version, encoded_proto_data_vec, blob_size)
+                .await
+            {
                 Ok(_) => {
-                    let size = get_blob_transaction_size();
-                    self.next_version += size;
-                    ma.tick_now(size);
+                    self.current_version += blob_size;
+                    metadata.version += blob_size;
+
+                    ma.tick_now(blob_size);
                     info!(
-                        version = self.next_version,
+                        version = self.current_version,
                         tps = (ma.avg() * 1000.0) as u64,
                         "[indexer file store] Processed a blob"
                     );
@@ -122,9 +126,17 @@ impl Processor {
                         error = err.to_string(),
                         "[indexer file store] Failed to process a blob; retrying in 1 second"
                     );
-                    sleep(Duration::from_secs(1));
                 },
             }
+            // If the metadata is not updated, the indexer will be restarted.
+            Object::create(
+                bucket_name.as_str(),
+                serde_json::to_vec(&metadata).unwrap(),
+                "metadata.json",
+                "application/json",
+            )
+            .await
+            .unwrap();
         }
     }
 }
